@@ -1,8 +1,13 @@
 ---
 title: "Project 4"
-author: "Jai Jeffryes"
+author: "Jai Jeffryes (first draft)"
 date: "11/3/2019"
-output: html_document
+output:
+  html_document:
+    highlight: pygments
+    theme: flatly
+    toc: yes
+    toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -18,6 +23,9 @@ library(tidytext)
 library(widyr) # pairwise counting
 library(ggplot2)
 ```
+
+## Corpus trial (not executed)
+Tried a few steps of building a corpus using `tm`. Turned this off in favor of a Tidyverse workflow.
 
 ```{r corpus_exp, eval=FALSE}
 dir_spam <- "./data/spam"
@@ -45,32 +53,51 @@ corpus_ham <- create_corpus(fils_ham, "ham")
 corpus_spam <- create_corpus(fils_spam, "spam")
 ```
 
+## Read emails
+The Tidy approach starts here.
+
+*Reference*: [Text Mining with R: A Tidy Approach](https://www.tidytextmining.com).
+
+Read two directories of emails. `readr::read_file()` is very fast and syntactically easier than `base::readLines()`.
+
 ```{r}
+# Directories for emails.
 dir_spam <- "./data/spam"
 dir_ham <- "./data/easy_ham"
 
+# File lists.
 fils_ham <- list.files(dir_ham, full.names = TRUE)
 fils_spam <- list.files(dir_spam, full.names = TRUE)
 
+# Function for input.
 get_text_df <- function(files, class) {
 	raw_email <- sapply(files, read_file)
+	# Pick off key value on end of file names
 	id <- str_extract(files, "\\w*$")
+	# Corpus in tidy format. Each row is a document.
 	text_df <- tibble(id = id, class = class, email = raw_email)
 
 	return(text_df)
 }
 
+# Input.
 ham_df <- get_text_df(fils_ham, "ham")
 spam_df <- get_text_df(fils_spam, "spam")
 
+# Merge the documents into one corpus.
 email_df <- rbind(ham_df, spam_df)
+
+# Free some memory, if you care.
 rm(list = c("ham_df", "spam_df"))
 gc()
-
 ```
+
+## Tokenize
+This approach creates a tall, narrow data frame of tokens.
 
 ```{r}
 # Look at 2 emails.
+# dplyr retrieval is easy. Filtering and aggregation, too.
 email_df %>% 
 	select(email) %>% 
 	sample_n(2)
@@ -81,27 +108,32 @@ email_tokens_df <- email_df %>%
 	anti_join(stop_words)
 ```
 
+### Look at some counts.
+This might be a good place for some data cleansing
+
+**Possible cleansing**
+
+- Remove email headers.
+- Create custom stop list.
+
 ```{r}
-# Look at some counts.
-# Could use some cleaning if these words are unimportant.
-
-# Possible cleansing.
-# Remove headers.
-# Create custom stop list.
-
 email_tokens_df %>% 
 	count(word, sort = TRUE)
 ```
 
+### Co-occurrence and correlation
+Do we care about co-occurrences? I started this based on the NASA case study in *TMWR*. However, the pairwise counting (from the `widyr` package) aborts my R session on my device, so I turned off this chunk. If you try it, save your work first and be afraid, very very afraid.
+
 ```{r cooccur, eval=FALSE}
-# Do we care about co-occurrances and correlations?
-# My environment is too fragile to do it.
-# email_word_pairs <- email_tokens_df %>%
-# 	pairwise_count(word, id, sort = TRUE, upper = FALSE)
+# Maybe what I'm asking here should have grouped by class, not id. Dunno, actually.
+email_word_pairs <- email_tokens_df %>%
+    pairwise_count(word, id, sort = TRUE, upper = FALSE)
 ```
 
+## TD-IDF
+Calculate term frequency and and inverse document frequency.
+
 ```{r}
-# TF IDF
 email_tf_idf <- email_tokens_df %>% 
   count(class, word, sort = TRUE) %>%
   ungroup() %>%
@@ -121,15 +153,19 @@ email_tf_idf %>%
   labs(x = NULL, y = "tf-idf") +
   facet_wrap(~class, ncol = 2, scales = "free") +
   coord_flip()
+```
 
-# Word counts and then a document term matrix.
+## Document term matrix
+First departure from Tidy formats. This should be usable by `tm`.
+
+```{r}
+# Word counts.
 word_counts <- email_tokens_df %>%
   #anti_join(my_stop_words) %>%
   count(id, word, sort = TRUE) %>%
   ungroup()
 
-head(word_counts)
-
+# Cast to a document term matrix.
 email_dtm <- word_counts %>% 
 	cast_dtm(id, word, n)
 ```
