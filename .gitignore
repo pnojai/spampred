@@ -34,3 +34,20 @@ vignettes/*.pdf
 
 # Shiny token, see https://shiny.rstudio.com/articles/shinyapps.html
 rsconnect/
+
+.DS_Store
+
+data/easy_ham_2/
+
+data/spam_2 2/
+
+*.bz2
+data/easy_ham 2/
+
+data/hard_ham/
+
+data/hard_ham 2/
+
+data/spam 2/
+
+data/spam_2/
