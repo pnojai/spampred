@@ -15,6 +15,7 @@ library(stringr)
 library(dplyr)
 library(tidyr)
 library(tidytext)
+library(tm) # required for VCorpus function
 library(widyr) # pairwise counting
 library(ggplot2)
 ```
@@ -23,17 +24,22 @@ library(ggplot2)
 dir_spam <- "./data/spam"
 dir_ham <- "./data/easy_ham"
 
-fils_ham <- list.files(dir_ham, full.names = TRUE)
-fils_spam <- list.files(dir_spam, full.names = TRUE)
+# objects of list of file names
+files_ham <- list.files(dir_ham, full.names = TRUE)#, all.files = TRUE)
+files_spam <- list.files(dir_spam, full.names = TRUE)#, all.files = TRUE)
 
-create_corpus <- function(fils, class) {
-	for (i in seq_along(fils)) {
-		raw_text <- read_file(fils[i])
-		if (i == 1) {
-			corpus <- VCorpus(VectorSource(raw_text))
+# object from function with two arguments "files" and "class"
+create_corpus <- function(files, class) {
+  for (i in seq_along(files)){  # for each in seq of files   
+		raw_text <- read_file(files[i])  # object of contents of each file
+		#print(i)
+		if (i == 1) {  # if 
+			corpus <- VCorpus(VectorSource(raw_text))  # object of volatile corpora
 		} else {
 		corpus_1doc <- VCorpus(VectorSource(raw_text))
+		#print(corpus_1doc)
 		corpus <- c(corpus, corpus_1doc)
+		#print(corpus)
 		}
 		# meta(ret_Corpus, tag = "class", type = "indexed") <- class
 	}
@@ -41,27 +47,35 @@ create_corpus <- function(fils, class) {
 	return(corpus)
 }
 
-corpus_ham <- create_corpus(fils_ham, "ham")
-corpus_spam <- create_corpus(fils_spam, "spam")
+#files_ham
+corpus_ham <- create_corpus(files_ham, "ham")
+corpus_spam <- create_corpus(files_spam, "spam")
+
+```
+
+```{r}
+corpus_ham
+corpus_spam
 ```
 
 ```{r}
 dir_spam <- "./data/spam"
 dir_ham <- "./data/easy_ham"
 
-fils_ham <- list.files(dir_ham, full.names = TRUE)
-fils_spam <- list.files(dir_spam, full.names = TRUE)
+files_ham <- list.files(dir_ham, full.names = TRUE)
+files_spam <- list.files(dir_spam, full.names = TRUE)
 
 get_text_df <- function(files, class) {
 	raw_email <- sapply(files, read_file)
+	print(raw_email)
 	id <- str_extract(files, "\\w*$")
 	text_df <- tibble(id = id, class = class, email = raw_email)
 
 	return(text_df)
 }
 
-ham_df <- get_text_df(fils_ham, "ham")
-spam_df <- get_text_df(fils_spam, "spam")
+ham_df <- get_text_df(files_ham, "ham")
+spam_df <- get_text_df(files_spam, "spam")
 
 email_df <- rbind(ham_df, spam_df)
 rm(list = c("ham_df", "spam_df"))
