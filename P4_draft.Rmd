@@ -160,7 +160,7 @@ set_doc_vars <- function(x) {
     x[[i]]$meta["to"] <- str_extract(doc_content, "(?<=To:)([^\\n]+)")
     x[[i]]$meta["from"] <- str_extract(doc_content, "(?<=From:)([^\\n]+)")
     x[[i]]$meta["subject"] <- str_extract(doc_content, "(?<=Subject:)([^\\n]+)")
-    break
+    
   }
   # Check Results
   # x[[2]]$meta
@@ -1780,6 +1780,7 @@ tidy
 https://juliasilge.github.io/tidytext/articles/tidying_casting.html
 
 more functions https://cran.r-project.org/web/packages/preText/vignettes/getting_started_with_preText.html
+data https://spamassassin.apache.org/old/publiccorpus/
 
 simple http://www.rpubs.com/AGoldberg/IS607W11
 
