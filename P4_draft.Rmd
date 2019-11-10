@@ -1776,3 +1776,11 @@ ggplot(data=ep4.bigrams, aes(x=reorder(word, -freq), y=freq)) +
 
 ```
 
+tidy
+https://juliasilge.github.io/tidytext/articles/tidying_casting.html
+
+more functions https://cran.r-project.org/web/packages/preText/vignettes/getting_started_with_preText.html
+
+simple http://www.rpubs.com/AGoldberg/IS607W11
+
+cleanNLP https://raw.githubusercontent.com/yanhann10/opendata_viz/master/refugee/refugee.Rmd
