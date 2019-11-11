@@ -1,7 +1,7 @@
 ---
 title: "AP4"
 subtitle: "Data 607"
-author: "T. Jenkins"
+author: "T. Jenkins, J. Jeffryes, N. Chung"
 date: "`r Sys.Date()`"
 output:
   html_document:
@@ -66,44 +66,20 @@ library('xgboost')
 library('caret')
 
 library('treemapify') #visualisation
-
-
-
 library(rvest)
 library(purrr)
-library(readr)
-library(dplyr)
 library(lubridate)
-
 library(readr)
-library(stringr)
-library(dplyr)
-library(tidyr)
 library(tidytext)
 library(widyr) # pairwise counting
-library(ggplot2)
-
-#most of the libraries needed
-library(dplyr) #data manipulation
-library(ggplot2) #visualizations
 library(gridExtra) #viewing multiple plots together
-library(tidytext) #text mining
 library(wordcloud2) #creative visualizations
-
-library(readr)
-library(stringr)
-library(dplyr)
-library(tidyr)
-library(tidytext)
-library(widyr) # pairwise counting
-library(ggplot2)
-library("readtext")
+library('readtext')
 ```
 
 
 ## Corpus Creation
 #https://stackoverflow.com/questions/47410866/r-inspect-document-term-matrix-results-in-error-repeated-indices-currently-not
-`
 
 # this was not used except in the following cell but study to understand the data structures
 #http://rpubs.com/Fixed_Point/486842
@@ -115,39 +91,40 @@ https://www.kaggle.com/rtatman/nlp-in-r-topic-modelling
 
 final note https://github.com/yanhann10/opendata_viz/tree/master/refugee
 
+# Assignment
+It can be useful to be able to classify new "test" documents using already classified "training" documents. A common example is using a corpus of labeled spam and ham (non-spam) e-mails to predict whether or not a new document is spam.  
+
+For this project, you can start with a spam/ham dataset, then predict the class of new documents (either withheld from the training dataset or from another source such as your own spam folder). One example corpus:   https://spamassassin.apache.org/old/publiccorpus/
+
+# Approach
+
+
 # VCorpus
 ```{r}
-ham_rawc <- VCorpus(DirSource("rt/easy_ham/"))
-spam_rawc <- VCorpus(DirSource("rt/spam/"))
+# load data into objec ts
+ham_rawc <- VCorpus(DirSource("data/easy_ham/"))
+spam_rawc <- VCorpus(DirSource("data/spam/"))
  
-## Set the meta class
- 
+## set the meta class
 ham_corpus <- ham_rawc
 spam_corpus <- spam_rawc
 meta(ham_corpus, tag="class", type ="corpus") <- "ham"
 meta(spam_corpus, tag="class", type ="corpus") <- "spam"
 
-
-rm(list = c("ham_rawc", "spam_rawc"))
-gc()
+rm(list = c("ham_rawc", "spam_rawc")) # remove objects
+gc() # garbage collection
  
-
-
-# Format and view corpus
+# reference: format and view corpus
 # https://www.rdocumentation.org/packages/tm/versions/0.7-6/topics/content_transformer
  
-
-
-# Collapse rows
+# collapse rows
 collapse_lines <- content_transformer(function(x) paste(x, collapse="\n"))
 ham_corpus <- tm_map(ham_corpus, collapse_lines)
 spam_corpus <- tm_map(spam_corpus, collapse_lines)
 
-#ham_corpus[[1]]$content[1]
+# validate object contents
+ham_corpus[[1]]$content[1]
 ```
-
-
-
 
 ## Set the docvars and remove header
 ```{r}
@@ -169,7 +146,6 @@ set_doc_vars <- function(x) {
 
 ham_corpus <- set_doc_vars(ham_corpus)
 spam_corpus <- set_doc_vars(spam_corpus)
-
 ```
 
 
@@ -308,7 +284,6 @@ c_ham <- tm_map(c_ham, removeWords, stopwords("english"), lazy = TRUE)
 #c_ham <- tm_map(c_ham, stemDocument, lazy = TRUE)
 ```
 
-
 ```{r}
 c_spam <- tm_map(c_spam, removeNumbers, lazy = TRUE)
 c_spam <- tm_map(c_spam, removeWords, stopwords("english"), lazy = TRUE)
@@ -316,8 +291,6 @@ c_spam <- tm_map(c_spam, removeWords, stopwords("english"), lazy = TRUE)
 
 
 ```
-
-
 
 ```{r echo=FALSE}
 #Temp remove encasing function
@@ -342,274 +315,144 @@ c_spam$meta$class
 c_spam[[1]][1]$content
 ```
 
-
-
-```{r}
-#BREAKR
-```
-
-# DF -- Spooky
+# Alternate methods
+In this section, we load the spam and ham data into a common dataframe with columns "text", "class", and "id" for analysis and visualization.
 ```{r}
 make_df <- function() {
   dfh <- data.frame(text = sapply(c(c_ham), as.character), stringsAsFactors = FALSE)
   dfh$class <- "ham"
   dfh$id <- rownames(dfh)
+  glimpse(dfh) # validate ham output
   dfs <- data.frame(text = sapply(c(c_spam), as.character), stringsAsFactors = FALSE)
   dfs$class <- "spam"
   dfs$id <- rownames(dfs)
-  head(dfs)
+  glimpse(dfs) # validate spam output
   df <- rbind(dfh, dfs)
-  head(df)
-  summary(df)
-  glimpse(df)
-  sum(is.na(df))
+  glimpse(df) # validate merge
   df <- df %>%
     mutate(class = as.factor(class))
   return(df)
 }
 df <- make_df()
-head(df)
-
+head(df) 
 ```
 
-
+We utilize the `tidytext` scissors to drop punctuation, `stopwords`, and transform all words into lower case. 
 ```{r}
-
 t1 <- df %>% unnest_tokens(word, text)
 
 t1 <- t1 %>%
-
   anti_join(stop_words, by = "word")
 
-
-t1 %>%
-
-  count(word) %>%
-
-  with(wordcloud(word, n, max.words = 50, color = c("purple4", "red4", "black")))
-
+head(t1$word)
 ```
 
-
-
+We next filter the dataframe for each "ham" and "spam" to visualize the most common words in the text in a wordcloud.
 ```{r split=FALSE, fig.align = 'default', warning = FALSE, fig.cap ="Fig. 2", out.width="100%"}
-
 t1 %>%
-
   filter(class == "ham") %>%
-
   count(word) %>%
-
   with(wordcloud(word, n, max.words = 30, color = "purple4"))
+
 t1 %>%
-
   filter(class == "spam") %>%
-
   count(word) %>%
-
   with(wordcloud(word, n, max.words = 30, color = "red2"))
-
 ```
 
-
+Here we demonstrate how to transform a dataframe into a Document Term Matrix
 ```{r}
-p1 <- df %>%
+t1_h <- t1 %>%
+  filter(class == "ham")
 
-  ggplot(aes(class, fill = class)) +
+t1_s <- t1 %>%
+  filter(class == "spam")
 
-  geom_bar() +
+t2_h <- Corpus(VectorSource(t1_h$word))
+dtm_h <- DocumentTermMatrix(t2_h)
 
+t2_s <- Corpus(VectorSource(t1_s$word))
+dtm_s <- DocumentTermMatrix(t2_s)
+print(dtm_h)
+print(dtm_s)
+```
+
+We then visualize word frequency by classification, as well as word and sentence length.
+```{r}
+t1_group <- t1 %>%
+  group_by(word, class) %>%
+  count()
+
+t1_word <- t1 %>%
+  group_by(word) %>%
+  count() %>%
+  rename(all = n)
+
+# plot word frequency by group
+t1_group %>%
+  left_join(t1_word, by = "word") %>%
+  arrange(desc(all)) %>%
+  head(80) %>%
+  ungroup() %>%
+  ggplot(aes(reorder(word, all, FUN = min), n, fill = class)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  facet_wrap(~ class) +
   theme(legend.position = "none")
-
 
 #detect sentences
 p2 <- df %>%
-
   mutate(sen_len = str_length(text)) %>%
-
   ggplot(aes(sen_len, class, fill = class)) +
-
   geom_density_ridges() +
-
   scale_x_log10() +
-
   theme(legend.position = "none") +
-
   labs(x = "Sentence length [# characters]")
 
-
-
 p3 <- t1 %>%
-
   mutate(word_len = str_length(word)) %>%
-
   ggplot(aes(word_len, fill = class)) +
-
   geom_density(bw = 0.05, alpha = 0.3) +
-
   scale_x_log10() +
-
   theme(legend.position = "none") +
-
   labs(x = "Word length [# characters]")
 
-
-
-print(p1)
-#print(p2)
+print(p2)
 print(p3)
-
 ```
 
-
-
-
-```{r message=FALSE, split=FALSE, fig.align = 'default', warning = FALSE, fig.cap ="Fig. 4", out.width="100%"}
-
-p1 <- df %>%
-
-  ggplot(aes(class, fill = class)) +
-
-  geom_bar() +
-
-  theme(legend.position = "none")
-
-
-
-p2 <- df %>%
-
-  mutate(sen_len = str_length(text)) %>%
-
-  ggplot(aes(sen_len, class, fill = class)) +
-
-  geom_density_ridges() +
-
-  scale_x_log10() +
-
-  theme(legend.position = "none") +
-
-  labs(x = "Sentence length [# characters]")
-
-
-
-p3 <- t1 %>%
-
-  mutate(word_len = str_length(word)) %>%
-
-  ggplot(aes(word_len, fill = class)) +
-
-  geom_density(bw = 0.05, alpha = 0.3) +
-
-  scale_x_log10() +
-
-  theme(legend.position = "none") +
-
-  labs(x = "Word length [# characters]")
-
-
-
-print(p1)
-#print(p2)
-print(p3)
-
-p1 <- 1; p2 <- 1; p3 <- 1;  
-
-```
-
-```{r split=FALSE, fig.align = 'default', warning = FALSE, fig.cap ="Fig. 4", out.width="100%"}
-
-foo <- t1 %>%
-
-  group_by(word, class) %>%
-
-  count()
-
-
-
-bar <- t1 %>%
-
-  group_by(word) %>%
-
-  count() %>%
-
-  rename(all = n)
-
-
-
-foo %>%
-
-  left_join(bar, by = "word") %>%
-
-  arrange(desc(all)) %>%
-
-  head(80) %>%
-
-  ungroup() %>%
-
-  ggplot(aes(reorder(word, all, FUN = min), n, fill = class)) +
-
-  #ggplot(aes(word, n)) +
-
-  geom_col() +
-
-  xlab(NULL) +
-
-  coord_flip() +
-
-  facet_wrap(~ class) +
-
-  theme(legend.position = "none")
-
-```
 ## Fix
 
 ```{r split=FALSE, fig.align = 'default', warning = FALSE, fig.cap ="Fig. 5", out.width="100%"}
-frequency <-t1 %>%
-
+frequency <- t1 %>%
   count(class, word) %>%
-
   filter(n > 50) %>%
-
   group_by(class) %>%
-
   mutate(freq = n / sum(n)) %>%
-
   select(-n) %>%
-
   spread(class, freq) %>%
-
   gather(class, freq, spam:ham) %>%
-
   filter(!is.na(freq) & !is.na(class)) %>%
-
   arrange(desc(freq))
 
 head(frequency)
 ```
 
 
-{r split=FALSE, fig.align = 'default', warning = FALSE, fig.cap ="Fig. 5", out.width="100%"}
+```{r split=FALSE, fig.align = 'default', warning = FALSE, fig.cap ="Fig. 5", out.width="100%"}
 ggplot(frequency, aes(freq, spam, color = abs(spam - freq))) +
-
   geom_abline(color = "gray40", lty = 2) +
-
   geom_jitter(alpha = 0.1, size = 2.5, width = 0.1, height = 0.1) +
-
   geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
-
   scale_x_log10(labels = percent_format()) +
-
   scale_y_log10(labels = percent_format()) +
-
   #scale_color_gradient(limits = c(0, 0.001), low = "darkslategray4", high = "gray95") +
-
   facet_wrap(~spam, ncol = 2) +
-
   theme(legend.position="none") +
-
   labs(y = "spam", x = NULL)
 
-
+```
 
 
 
