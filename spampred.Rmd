@@ -20,7 +20,7 @@ library(stringr)
 library(dplyr)
 library(tidyr)
 library(tidytext)
-library(widyr) # pairwise counting
+# library(widyr) # pairwise counting
 library(ggplot2)
 ```
 
@@ -91,6 +91,10 @@ email_df <- rbind(ham_df, spam_df)
 rm(list = c("ham_df", "spam_df"))
 gc()
 ```
+```{r}
+
+```
+
 
 ## Tokenize
 This approach creates a tall, narrow data frame of tokens.
@@ -170,3 +174,7 @@ email_dtm <- word_counts %>%
 	cast_dtm(id, word, n)
 ```
 
+```{r}
+
+
+```
