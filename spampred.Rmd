@@ -108,12 +108,22 @@ email_bodies <- do.call(rbind.data.frame, email_bodies)
 colnames(email_bodies) <- "email"
 email_bodies$email <- as.character(email_bodies$email)
 
-# Replace email column
+# Replace email column with bodies.
 email_df <- cbind(email_df[, 1:2], email_bodies)
+
+# More cleaning.
+# email_df$email <- removePunctuation(email_df$email)
+# I don't want to remove punctuation. I think URLs differentiate emails.
+# email_df$email <- removeNumbers(email_df$email)
+# email_df$email <- stripWhitespace(email_df$email)
+# email_df$email <- tolower(email_df$email)
+
 ```
 
 ## Tokenize
 This approach creates a tall, narrow data frame of tokens.
+
+Remove stop words.
 
 ```{r}
 # Look at 2 emails.
@@ -129,26 +139,17 @@ email_tokens_df <- email_df %>%
 ```
 
 ### Look at some counts.
-This might be a good place for some data cleansing
 
-**Possible cleansing**
+**Possible additional cleansing**
 
-- Remove email headers.
-- Create custom stop list.
+- Stemming.
 
 ```{r}
 email_tokens_df %>% 
+    
 	count(word, sort = TRUE)
 ```
 
-### Co-occurrence and correlation
-Do we care about co-occurrences? I started this based on the NASA case study in *TMWR*. However, the pairwise counting (from the `widyr` package) aborts my R session on my device, so I turned off this chunk. If you try it, save your work first and be afraid, very very afraid.
-
-```{r cooccur, eval=FALSE}
-# Maybe what I'm asking here should have grouped by class, not id. Dunno, actually.
-email_word_pairs <- email_tokens_df %>%
-    pairwise_count(word, id, sort = TRUE, upper = FALSE)
-```
 
 ## TD-IDF
 Calculate term frequency and and inverse document frequency.
@@ -181,7 +182,7 @@ First departure from Tidy formats. This should be usable by `tm`.
 ```{r}
 # Word counts.
 word_counts <- email_tokens_df %>%
-  #anti_join(my_stop_words) %>%
+  # anti_join(stop_words) %>%
   count(id, word, sort = TRUE) %>%
   ungroup()
 
@@ -190,11 +191,11 @@ email_dtm <- word_counts %>%
 	cast_dtm(id, word, n)
 ```
 
-```{r}
-#dtm_terms <- DocumentTermMatrix(clean_term_corp, control = list(
-#  bounds = list(global = c(100L, Inf))))
-freq_terms <- Terms(email_dtm)
+These actions work on the Tidy generated DTM.
 
+```{r}
+email_dtm <- removeSparseTerms(email_dtm, 0.90)
+freq_terms <- Terms(email_dtm)
 ft <- colSums(as.matrix(email_dtm))
 ft_df <- data.frame(term = names(ft), count = as.integer(ft))
 knitr::kable(head(ft_df[order(ft, decreasing = TRUE), ], n = 20L),
