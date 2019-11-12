@@ -22,6 +22,7 @@ library(tidyr)
 library(tidytext)
 # library(widyr) # pairwise counting
 library(ggplot2)
+library(tm)
 ```
 
 ## Corpus trial (not executed)
@@ -91,10 +92,25 @@ email_df <- rbind(ham_df, spam_df)
 rm(list = c("ham_df", "spam_df"))
 gc()
 ```
+
+## Clean
 ```{r}
+# Remove headers.
+# RegEx notes:
+# (?s)(.*?\\n\\n)(.*)
+# (?s) - Single line mode. Lets EOL match the dot.
+# (.*?\\n\\n) - Non-greedy matching of any text and the first double line break.
+# (.*) Body of the email.
+email_bodies <- lapply(email_df$email, function(x) {
+    str_match(x, "(?s)(.*?\\n\\n)(.*)")[3]})
+# Convert list to data frame.
+email_bodies <- do.call(rbind.data.frame, email_bodies)
+colnames(email_bodies) <- "email"
+email_bodies$email <- as.character(email_bodies$email)
 
+# Replace email column
+email_df <- cbind(email_df[, 1:2], email_bodies)
 ```
-
 
 ## Tokenize
 This approach creates a tall, narrow data frame of tokens.
@@ -175,6 +191,14 @@ email_dtm <- word_counts %>%
 ```
 
 ```{r}
+#dtm_terms <- DocumentTermMatrix(clean_term_corp, control = list(
+#  bounds = list(global = c(100L, Inf))))
+freq_terms <- Terms(email_dtm)
 
-
+ft <- colSums(as.matrix(email_dtm))
+ft_df <- data.frame(term = names(ft), count = as.integer(ft))
+knitr::kable(head(ft_df[order(ft, decreasing = TRUE), ], n = 20L),
+             row.names = FALSE)
 ```
+
+
