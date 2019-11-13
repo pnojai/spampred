@@ -18,40 +18,13 @@ knitr::opts_chunk$set(echo = TRUE)
 library(readr)
 library(stringr)
 library(dplyr)
+library(tibble)
 library(tidyr)
 library(tidytext)
 # library(widyr) # pairwise counting
 library(ggplot2)
 library(tm)
-```
-
-## Corpus trial (not executed)
-Tried a few steps of building a corpus using `tm`. Turned this off in favor of a Tidyverse workflow.
-
-```{r corpus_exp, eval=FALSE}
-dir_spam <- "./data/spam"
-dir_ham <- "./data/easy_ham"
-
-fils_ham <- list.files(dir_ham, full.names = TRUE)
-fils_spam <- list.files(dir_spam, full.names = TRUE)
-
-create_corpus <- function(fils, class) {
-	for (i in seq_along(fils)) {
-		raw_text <- read_file(fils[i])
-		if (i == 1) {
-			corpus <- VCorpus(VectorSource(raw_text))
-		} else {
-		corpus_1doc <- VCorpus(VectorSource(raw_text))
-		corpus <- c(corpus, corpus_1doc)
-		}
-		# meta(ret_Corpus, tag = "class", type = "indexed") <- class
-	}
-	meta(corpus, tag = "class") <- class
-	return(corpus)
-}
-
-corpus_ham <- create_corpus(fils_ham, "ham")
-corpus_spam <- create_corpus(fils_spam, "spam")
+library(caret)
 ```
 
 ## Read emails
@@ -70,13 +43,18 @@ dir_ham <- "./data/easy_ham"
 fils_ham <- list.files(dir_ham, full.names = TRUE)
 fils_spam <- list.files(dir_spam, full.names = TRUE)
 
+# Filter files for development.
+max_fils <- 100
+fils_ham <- fils_ham[1:(min(max_fils, length(fils_ham)))]
+fils_spam <- fils_spam[1:(min(max_fils, length(fils_spam)))]
+
 # Function for input.
 get_text_df <- function(files, class) {
 	raw_email <- sapply(files, read_file)
 	# Pick off key value on end of file names
 	id <- str_extract(files, "\\w*$")
 	# Corpus in tidy format. Each row is a document.
-	text_df <- tibble(id = id, class = class, email = raw_email)
+	text_df <- tibble(id = id, class = as.factor(class), email = raw_email)
 
 	return(text_df)
 }
@@ -94,6 +72,8 @@ gc()
 ```
 
 ## Clean
+Remove headers.
+
 ```{r}
 # Remove headers.
 # RegEx notes:
@@ -101,29 +81,26 @@ gc()
 # (?s) - Single line mode. Lets EOL match the dot.
 # (.*?\\n\\n) - Non-greedy matching of any text and the first double line break.
 # (.*) Body of the email.
-email_bodies <- lapply(email_df$email, function(x) {
-    str_match(x, "(?s)(.*?\\n\\n)(.*)")[3]})
-# Convert list to data frame.
-email_bodies <- do.call(rbind.data.frame, email_bodies)
-colnames(email_bodies) <- "email"
-email_bodies$email <- as.character(email_bodies$email)
+# Tibbles. They're great. No strings as factors, no row names.
+email_bodies <- tibble(email = sapply(email_df$email, function(x) {
+     str_match(x, "(?s)(.*?\\n\\n)(.*)")[3]}))
 
 # Replace email column with bodies.
 email_df <- cbind(email_df[, 1:2], email_bodies)
-
-# More cleaning.
-# email_df$email <- removePunctuation(email_df$email)
-# I don't want to remove punctuation. I think URLs differentiate emails.
-# email_df$email <- removeNumbers(email_df$email)
-# email_df$email <- stripWhitespace(email_df$email)
-# email_df$email <- tolower(email_df$email)
-
 ```
 
 ## Tokenize
 This approach creates a tall, narrow data frame of tokens.
 
-Remove stop words.
+We get some cleaning for free.
+
+- Remove punctuation.
+- Convert to lower case.
+- Remove white space.
+
+And we outer join a stop word list to remove those.
+
+- Remove stop words.
 
 ```{r}
 # Look at 2 emails.
@@ -177,24 +154,43 @@ email_tf_idf %>%
 ```
 
 ## Document term matrix
-First departure from Tidy formats. This should be usable by `tm`.
+First departure from Tidy formats. Usable by ML models.
+
+Cast counts to a DTM. Inspect and reduce some of the sparseness.
 
 ```{r}
 # Word counts.
 word_counts <- email_tokens_df %>%
-  # anti_join(stop_words) %>%
   count(id, word, sort = TRUE) %>%
   ungroup()
 
 # Cast to a document term matrix.
 email_dtm <- word_counts %>% 
 	cast_dtm(id, word, n)
+
+# Print
+dim(email_dtm)
+email_dtm
+inspect(email_dtm[101:105, 101:105])
+
+# inspect() does the work of printing the object and a matrix conversion.
+email_dtm
+email_m <- as.matrix(email_dtm)
+dim(email_m)
+email_m[101:105, 101:105]
+
+# Remove some sparse terms and review again.
+email_dtm_rm_sparse <- removeSparseTerms(email_dtm, 0.99)
+dim(email_dtm_rm_sparse)
+email_dtm_rm_sparse
+inspect(email_dtm_rm_sparse[101:105, 101:105])
+
 ```
 
 These actions work on the Tidy generated DTM.
 
-```{r}
-email_dtm <- removeSparseTerms(email_dtm, 0.90)
+```{r eval=FALSE}
+#email_dtm <- removeSparseTerms(email_dtm, 0.90)
 freq_terms <- Terms(email_dtm)
 ft <- colSums(as.matrix(email_dtm))
 ft_df <- data.frame(term = names(ft), count = as.integer(ft))
@@ -202,4 +198,58 @@ knitr::kable(head(ft_df[order(ft, decreasing = TRUE), ], n = 20L),
              row.names = FALSE)
 ```
 
+## Assign train and test sets
+```{r}
+ham_cnt <- nrow(subset(email_df, class == "ham"))
+spam_cnt <- nrow(subset(email_df, class == "spam"))
+
+set.seed(2012)
+train_indicator_ham <- rbinom(n = ham_cnt, size = 1, prob = .5)
+train_indicator_spam <- rbinom(n = spam_cnt, size = 1, prob = .5)
+
+# We discarded the split corpuses when we merged them. Split them again
+# to assign a training indicator.
+email_df_ham <- email_df %>% 
+    filter(class == "ham") %>% 
+    mutate(train_indicator = train_indicator_ham)
+
+email_df_spam <- email_df %>% 
+    filter(class == "spam") %>% 
+    mutate(train_indicator = train_indicator_spam)
+
+email_df <- rbind(email_df_ham, email_df_spam)
+
+table(email_df$class, email_df$train_indicator)
+
+email_dtm_df <- as.data.frame(as.matrix(email_dtm_rm_sparse))
+
+email_dtm_df <- email_dtm_df %>% 
+    rownames_to_column(var = "doc_id")
+
+email_dtm_df <- inner_join(email_df, email_dtm_df, by = c("id" ="doc_id")) %>% 
+    select(-c("id", "email.x"))
+
+train_dtm <- subset(email_dtm_df, train_indicator == 1)
+train_dtm <- train_dtm %>% select(-"train_indicator")
+test_dtm <- subset(email_dtm_df, train_indicator == 0)
+test_dtm <- test_dtm %>% select(-"train_indicator")
+```
+
+## Support Vector Machine
+```{r}
+train_model <- train(class.x ~ ., data = train_dtm, method = 'svmLinear3')
+predict_train = predict(train_model, newdata=train_dtm)
+predict_test = predict( train_model, newdata=test_dtm)
+```
+
+## Results
+Observe confusion matrices.
+
+```{r}
+svm_confusion_m_train <- confusionMatrix(predict_train, train_dtm$class.x)
+svm_confusion_m <- confusionMatrix(predict_test, test_dtm$class.x)
+
+svm_confusion_m_train
+svm_confusion_m
+```
 
