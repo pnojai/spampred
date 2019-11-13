@@ -1,6 +1,6 @@
 ---
 title: "Project 4"
-author: "Jai Jeffryes (first draft)"
+author: "Jai Jeffryes, Tamiko Jenkins, Nicholas Chung"
 date: "11/3/2019"
 output:
   html_document:
@@ -14,6 +14,9 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+## Flag spam
+Analyze a corpus of emails classified as spam or legitimate (dubbed "ham"). Develop a predictive process for classifying new email correctly.
+
 ```{r}
 library(readr)
 library(stringr)
@@ -21,16 +24,26 @@ library(dplyr)
 library(tibble)
 library(tidyr)
 library(tidytext)
-# library(widyr) # pairwise counting
 library(ggplot2)
 library(tm)
 library(caret)
 ```
 
-## Read emails
-The Tidy approach starts here.
+## Approach
+The central structure required for this text mining process is a Document Term Matrix (DTM), which will be the input into machine learning models. There are multiple alternatives for producing a DTM. They include:
+
+- Building a corpus with the `tm` package.
+- The `quanteda` package.
+- Tidyverse tools.
+
+Each of them work, and once you have the DTM in hand, you can use it with any ML model.
+
+We elected the Tidyverse, which embraced data input, cleansing, and aggregation into a DTM.
 
 *Reference*: [Text Mining with R: A Tidy Approach](https://www.tidytextmining.com).
+
+## Read emails
+The Tidy approach starts here.
 
 Read two directories of emails. `readr::read_file()` is very fast and syntactically easier than `base::readLines()`.
 
@@ -44,7 +57,7 @@ fils_ham <- list.files(dir_ham, full.names = TRUE)
 fils_spam <- list.files(dir_spam, full.names = TRUE)
 
 # Filter files for development.
-max_fils <- 100
+max_fils <- 500
 fils_ham <- fils_ham[1:(min(max_fils, length(fils_ham)))]
 fils_spam <- fils_spam[1:(min(max_fils, length(fils_spam)))]
 
@@ -66,21 +79,23 @@ spam_df <- get_text_df(fils_spam, "spam")
 # Merge the documents into one corpus.
 email_df <- rbind(ham_df, spam_df)
 
-# Free some memory, if you care.
+# Free some memory.
 rm(list = c("ham_df", "spam_df"))
 gc()
 ```
 
 ## Clean
-Remove headers.
+Remove headers. By specification, email headers may not contain blank lines. The regular expression separates messages into capture groups.
+
+RegEx notes:
+
+- Full expression: (?s)(.*?\\n\\n)(.*)
+- (?s) - Single line mode. Lets EOL match the dot.
+- (.*?\\n\\n) - Non-greedy matching of any text and the first double line break.
+- (.*) Body of the email.
 
 ```{r}
 # Remove headers.
-# RegEx notes:
-# (?s)(.*?\\n\\n)(.*)
-# (?s) - Single line mode. Lets EOL match the dot.
-# (.*?\\n\\n) - Non-greedy matching of any text and the first double line break.
-# (.*) Body of the email.
 # Tibbles. They're great. No strings as factors, no row names.
 email_bodies <- tibble(email = sapply(email_df$email, function(x) {
      str_match(x, "(?s)(.*?\\n\\n)(.*)")[3]}))
@@ -92,7 +107,7 @@ email_df <- cbind(email_df[, 1:2], email_bodies)
 ## Tokenize
 This approach creates a tall, narrow data frame of tokens.
 
-We get some cleaning for free.
+We get some cleaning for free frum the `unnest()` function.
 
 - Remove punctuation.
 - Convert to lower case.
@@ -100,7 +115,9 @@ We get some cleaning for free.
 
 And we outer join a stop word list to remove those.
 
-- Remove stop words.
+**Possible additional cleansing**
+
+- Stemming.
 
 ```{r}
 # Look at 2 emails.
@@ -116,20 +133,13 @@ email_tokens_df <- email_df %>%
 ```
 
 ### Look at some counts.
-
-**Possible additional cleansing**
-
-- Stemming.
-
 ```{r}
 email_tokens_df %>% 
-    
 	count(word, sort = TRUE)
 ```
 
-
 ## TD-IDF
-Calculate term frequency and and inverse document frequency.
+Calculate term frequency and and inverse document frequency. We'll need this for producing a DTM.
 
 ```{r}
 email_tf_idf <- email_tokens_df %>% 
@@ -187,17 +197,6 @@ inspect(email_dtm_rm_sparse[101:105, 101:105])
 
 ```
 
-These actions work on the Tidy generated DTM.
-
-```{r eval=FALSE}
-#email_dtm <- removeSparseTerms(email_dtm, 0.90)
-freq_terms <- Terms(email_dtm)
-ft <- colSums(as.matrix(email_dtm))
-ft_df <- data.frame(term = names(ft), count = as.integer(ft))
-knitr::kable(head(ft_df[order(ft, decreasing = TRUE), ], n = 20L),
-             row.names = FALSE)
-```
-
 ## Assign train and test sets
 ```{r}
 ham_cnt <- nrow(subset(email_df, class == "ham"))
@@ -221,14 +220,20 @@ email_df <- rbind(email_df_ham, email_df_spam)
 
 table(email_df$class, email_df$train_indicator)
 
+# We need to add the class into the matrix.
 email_dtm_df <- as.data.frame(as.matrix(email_dtm_rm_sparse))
 
+# The matrix conversion puts the id column into row names. The tibble package
+# has a function for moving that into a column. There is a term for "id" in the matrix, so we need a synonym.
 email_dtm_df <- email_dtm_df %>% 
     rownames_to_column(var = "doc_id")
 
+# Join the dtm to the email data frame to pick up the class. Don't need
+# the document id or the raw email, though.
 email_dtm_df <- inner_join(email_df, email_dtm_df, by = c("id" ="doc_id")) %>% 
     select(-c("id", "email.x"))
 
+# Build the train and test sets. Drop the indicators when you're done.
 train_dtm <- subset(email_dtm_df, train_indicator == 1)
 train_dtm <- train_dtm %>% select(-"train_indicator")
 test_dtm <- subset(email_dtm_df, train_indicator == 0)
@@ -236,6 +241,8 @@ test_dtm <- test_dtm %>% select(-"train_indicator")
 ```
 
 ## Support Vector Machine
+This email prediction is a supervised learning task. We employ SVM for its classification functionality. We train the model with a subset of the DTM, and test the prediction of ham/spam classification using the remainder.
+
 ```{r}
 train_model <- train(class.x ~ ., data = train_dtm, method = 'svmLinear3')
 predict_train = predict(train_model, newdata=train_dtm)
@@ -243,7 +250,9 @@ predict_test = predict( train_model, newdata=test_dtm)
 ```
 
 ## Results
-Observe confusion matrices.
+We observe confusion matrices. First, we examine the confusion matrix for the training set just for its interest. It naturally gets a perfect score.
+
+The confusion matrix for the test set is very accurate with a low p value.
 
 ```{r}
 svm_confusion_m_train <- confusionMatrix(predict_train, train_dtm$class.x)
