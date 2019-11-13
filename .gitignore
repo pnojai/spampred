@@ -51,3 +51,7 @@ data/hard_ham 2/
 data/spam 2/
 
 data/spam_2/
+
+data/easy_ham/
+
+data/spam/
