@@ -49,8 +49,8 @@ Read two directories of emails. `readr::read_file()` is very fast and syntactica
 
 ```{r}
 # Directories for emails.
-dir_spam <- "./data/spam"
-dir_ham <- "./data/easy_ham"
+dir_spam <- "data/spam"
+dir_ham <- "data/easy_ham"
 
 # File lists.
 fils_ham <- list.files(dir_ham, full.names = TRUE)
@@ -98,7 +98,9 @@ RegEx notes:
 # Remove headers.
 # Tibbles. They're great. No strings as factors, no row names.
 email_bodies <- tibble(email = sapply(email_df$email, function(x) {
-     str_match(x, "(?s)(.*?\\n\\n)(.*)")[3]}))
+    # str_match(x, "(?s)(.*?\\n\\n)(.*)")[3]}))
+    sub(".*?\n\n", "", x)
+}))
 
 # Replace email column with bodies.
 email_df <- cbind(email_df[, 1:2], email_bodies)
