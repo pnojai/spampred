@@ -30,22 +30,31 @@ library(caret)
 ```
 
 ## Approach
-The central structure required for this text mining process is a Document Term Matrix (DTM), which will be the input into machine learning models. There are multiple alternatives for producing a DTM. They include:
 
-- Building a corpus with the `tm` package.
-- The `quanteda` package.
-- Tidyverse tools.
+### Document term matrix
+A central data structure in text mining is the Document Term Matrix (DTM). The DTM serves as the input into many machine learning models. 
 
-Each of them work, and once you have the DTM in hand, you can use it with any ML model.
+There are multiple tools for producing a DTM. Once you have the DTM in hand, you can use it with many ML models.
 
-We elected the Tidyverse, which embraced data input, cleansing, and aggregation into a DTM.
+### Tidyverse
+Tidyverse tools for text mining encompass data input, cleansing, and tokenization. Tidy structures cast to a DTM.
 
 *Reference*: [Text Mining with R: A Tidy Approach](https://www.tidytextmining.com).
 
-## Read emails
-The Tidy approach starts here.
+### Machine learning
+We classified emails by employing a Support Vector Machine model from the `caret` package.
 
-Read two directories of emails. `readr::read_file()` is very fast and syntactically easier than `base::readLines()`.
+### Other text mining tools
+We also tried other text mining tools in order to become familiar with prevailing methodologies. We took the tools out for test drives and explored other uses.
+
+- We built a corpus with the `tm` package, and did yadda yadda yadda.
+- We used the `quanteda` package to ...
+- Whatever else we did... The sentiment analysis, for example, et cetera.
+
+## Read emails
+The processing begins here using a Tidy approach.
+
+Read two directories of emails. `readr::read_file()` is very fast and syntactically easier than `base::readLines()`. We processed 500 emails from each class as a pragmatic limitation of computation resources.
 
 ```{r}
 # Directories for emails.
@@ -56,7 +65,7 @@ dir_ham <- "data/easy_ham"
 fils_ham <- list.files(dir_ham, full.names = TRUE)
 fils_spam <- list.files(dir_spam, full.names = TRUE)
 
-# Filter files for development.
+# Filter file count.
 max_fils <- 500
 fils_ham <- fils_ham[1:(min(max_fils, length(fils_ham)))]
 fils_spam <- fils_spam[1:(min(max_fils, length(fils_spam)))]
@@ -85,21 +94,21 @@ gc()
 ```
 
 ## Clean
-Remove headers. By specification, email headers may not contain blank lines. The regular expression separates messages into capture groups.
+Remove headers. By specification, email headers may not contain blank lines. The regular expression strips them.
 
-RegEx notes:
+**Regular expression notes**:
 
-- Full expression: (?s)(.*?\\n\\n)(.*)
-- (?s) - Single line mode. Lets EOL match the dot.
-- (.*?\\n\\n) - Non-greedy matching of any text and the first double line break.
-- (.*) Body of the email.
+- RegEx: `.*?\n\n`
+- The question mark enables non-greedy matching of any text in order to match up to the first double line break.
+- The solution isn't perfect. There are some headers with multiple instances of blank lines. Nevertheless, most of the headers are removed and the solution appears adequate.
+- Our experience found `stringr` to be inferior in performance to base R for this string manipulation. However, our base R code requires more testing to fix a bug that allows some headers through.
 
 ```{r}
 # Remove headers.
 # Tibbles. They're great. No strings as factors, no row names.
 email_bodies <- tibble(email = sapply(email_df$email, function(x) {
-    # str_match(x, "(?s)(.*?\\n\\n)(.*)")[3]}))
-    sub(".*?\n\n", "", x)
+    str_match(x, "(?s)(.*?\\n\\n)(.*)")[3]
+    # sub(".*?\n\n", "", x)
 }))
 
 # Replace email column with bodies.
@@ -109,7 +118,7 @@ email_df <- cbind(email_df[, 1:2], email_bodies)
 ## Tokenize
 This approach creates a tall, narrow data frame of tokens.
 
-We get some cleaning for free frum the `unnest()` function.
+We get some cleaning for free from the `unnest()` function.
 
 - Remove punctuation.
 - Convert to lower case.
@@ -117,7 +126,7 @@ We get some cleaning for free frum the `unnest()` function.
 
 And we outer join a stop word list to remove those.
 
-**Possible additional cleansing**
+**Possible additional cleaning**
 
 - Stemming.
 
@@ -186,12 +195,13 @@ email_dtm
 inspect(email_dtm[101:105, 101:105])
 
 # inspect() does the work of printing the object and a matrix conversion.
+# Repeat the review to show the comparison.
 email_dtm
 email_m <- as.matrix(email_dtm)
 dim(email_m)
 email_m[101:105, 101:105]
 
-# Remove some sparse terms and review again.
+# Remove some sparse terms and review again using inspect().
 email_dtm_rm_sparse <- removeSparseTerms(email_dtm, 0.99)
 dim(email_dtm_rm_sparse)
 email_dtm_rm_sparse
@@ -199,7 +209,9 @@ inspect(email_dtm_rm_sparse[101:105, 101:105])
 
 ```
 
-## Assign train and test sets
+## Segment data
+Segment the data into sets for training and testing.
+
 ```{r}
 ham_cnt <- nrow(subset(email_df, class == "ham"))
 spam_cnt <- nrow(subset(email_df, class == "spam"))
@@ -226,7 +238,10 @@ table(email_df$class, email_df$train_indicator)
 email_dtm_df <- as.data.frame(as.matrix(email_dtm_rm_sparse))
 
 # The matrix conversion puts the id column into row names. The tibble package
-# has a function for moving that into a column. There is a term for "id" in the matrix, so we need a synonym.
+# has a function for moving that into a column. There is a term for "id" in the
+# matrix, so we need a synonym. Since unnest() removed punctuation, we can use
+# punctuation in the variable name and be sure of no collision.
+
 email_dtm_df <- email_dtm_df %>% 
     rownames_to_column(var = "doc_id")
 
@@ -235,7 +250,7 @@ email_dtm_df <- email_dtm_df %>%
 email_dtm_df <- inner_join(email_df, email_dtm_df, by = c("id" ="doc_id")) %>% 
     select(-c("id", "email.x"))
 
-# Build the train and test sets. Drop the indicators when you're done.
+# Build the train and test sets. Drop the indicators when done.
 train_dtm <- subset(email_dtm_df, train_indicator == 1)
 train_dtm <- train_dtm %>% select(-"train_indicator")
 test_dtm <- subset(email_dtm_df, train_indicator == 0)
@@ -254,7 +269,7 @@ predict_test = predict( train_model, newdata=test_dtm)
 ## Results
 We observe confusion matrices. First, we examine the confusion matrix for the training set just for its interest. It naturally gets a perfect score.
 
-The confusion matrix for the test set is very accurate with a low p value.
+The confusion matrix for the test set is very accurate with a low p value. One run on the test set was 97% accurate with a p value near zero. The positive class is ham. There were 2 false negatives identified as spam within 247 ham emails. There were 11 false positives identifies as ham within 248 spam emails.
 
 ```{r}
 svm_confusion_m_train <- confusionMatrix(predict_train, train_dtm$class.x)
