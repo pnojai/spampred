@@ -17,7 +17,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 # Project 4
-## Flag spam
+## Assignment
 Analyze a corpus of emails classified as spam or legitimate (dubbed "ham"). Develop a predictive process for classifying new email correctly.
 
 ```{r}
@@ -31,144 +31,136 @@ library(ggplot2)
 library(tm)
 library(caret)
 library(wordcloud2)
+library(LiblineaR)
 ```
 
 ## Approach
-
-### Document term matrix
-A central data structure in text mining is the Document Term Matrix (DTM). The DTM serves as the input into many machine learning models. 
-
-There are multiple tools for producing a DTM. Once you have the DTM in hand, you can use it with many ML models.
+The following describes our general approach towards a predictive model for classifying emails:
+1. utilize the Tidyverse toolkit to clean and tokenize the dataset
+2. create a Document Term Matrix (DTM) to describe the frequency of terms in the dataset
+3. visualize descriptive findings with barcharts and wordclouds
+4. apply a machine learning model to develop a predictive classification model
 
 ### Tidyverse
-Tidyverse tools for text mining encompass data input, cleansing, and tokenization. Tidy structures cast to a DTM.
+We utilize Tidyverse tools for text mining enable data input, cleansing, and tokenization. It is additionally possible to cast tidy structures to a DTM.
 
 *Reference*: [Text Mining with R: A Tidy Approach](https://www.tidytextmining.com).
 
+### Document Term Matrix
+A key data structure in text mining is the DTM. DTMs serve as the input format for many machine learning models. 
+
 ### Machine learning
-We classified emails by employing a Support Vector Machine model from the `caret` package.
+We classify emails by employing a Support Vector Machine model from the `caret` package.
 
 ### Other text mining tools
-We also tried other text mining tools in order to become familiar with prevailing methodologies. We took the tools out for test drives and explored other uses.
+As part of our approach, we tried additional text mining tools and methods in order to familiarize ourselves with other prevalent methodologies and inform our eventual process. As part of our experimentation, we: 
+- built a corpus with the `tm` package to demonstrate the recommended approach;
+- used the `quanteda` package to enable more efficient processing; and
+- attempted basic sentiment analysis of the corpus. 
 
-- We built a corpus with the `tm` package, and did yadda yadda yadda.
-- We used the `quanteda` package to ...
-- Whatever else we did... The sentiment analysis, for example, et cetera.
-
-## Read emails
-The processing begins here using a Tidy approach.
-
-Read two directories of emails. `readr::read_file()` is very fast and syntactically easier than `base::readLines()`. We processed 500 emails from each class as a pragmatic limitation of computation resources.
+## 1. Read emails
+The processing begins with a Tidy approach. We first load the spam and ham emails from the respective directories. We observe that the `readr::read_file()` method is substantively faster and syntactically easier than `base::readLines()`. We process 500 emails from each class as a pragmatic limitation of compute resources.
 
 ```{r}
-# Directories for emails.
+# Directories for emails
 dir_spam <- "data/spam"
 dir_ham <- "data/easy_ham"
 
-# File lists.
+# File lists
 fils_ham <- list.files(dir_ham, full.names = TRUE)
 fils_spam <- list.files(dir_spam, full.names = TRUE)
 
-# Filter file count.
+# Filter file count
 max_fils <- 500
 fils_ham <- fils_ham[1:(min(max_fils, length(fils_ham)))]
 fils_spam <- fils_spam[1:(min(max_fils, length(fils_spam)))]
 
-# Function for input.
+# Function for input
 get_text_df <- function(files, class) {
 	raw_email <- sapply(files, function(x) read_file(x, locale=locale(encoding="latin1")))
 	# Pick off key value on end of file names
 	id <- str_extract(files, "\\w*$")
 	# Corpus in tidy format. Each row is a document.
 	text_df <- tibble(id = id, class = as.factor(class), email = raw_email)
-
 	return(text_df)
 }
 
-# Input.
+# Input
 ham_df <- get_text_df(fils_ham, "ham")
 spam_df <- get_text_df(fils_spam, "spam")
 
-# Merge the documents into one corpus.
+# Merge the documents into one corpus
 email_df <- rbind(ham_df, spam_df)
 
-# Free some memory.
+# Free some memory
 rm(list = c("ham_df", "spam_df"))
 gc()
 ```
 
-## Clean
-Remove headers. By specification, email headers may not contain blank lines. The regular expression strips them.
+## 2. Clean
+We start cleaning by removing headers. By specification, email headers may not contain blank lines; we apply regular expression to strip the headers.
 
-**Regular expression notes**:
-
-- RegEx: `.*?\n\n`
-- The question mark enables non-greedy matching of any text in order to match up to the first double line break.
-- The solution isn't perfect. There are some headers with multiple instances of blank lines. Nevertheless, most of the headers are removed and the solution appears adequate.
+**Notes on regular expression**:
+- `.*?\n\n`: The question mark enables non-greedy matching of any text in order to match up to the first double line break. The solution isn't perfect: there are some headers with multiple instances of blank lines. Nevertheless, most of the headers are removed and the solution appears adequate for our purposes.
 - Our experience found `stringr` to be inferior in performance to base R for this string manipulation. However, our base R code requires more testing to fix a bug that allows some headers through.
 
 ```{r}
-# Remove headers.
-# Tibbles. They're great. No strings as factors, no row names.
+# Remove headers
+# Tibbles: they're great -- no strings as factors, no row names
 email_bodies <- tibble(email = sapply(email_df$email, function(x) {
     str_match(x, "(?s)(.*?\\n\\n)(.*)")[3]
 }))
 
-# Replace email column with bodies.
+# Replace email column with bodies
 email_df <- cbind(email_df[, 1:2], email_bodies)
 ```
 
-## Tokenize
-This approach creates a tall, narrow data frame of tokens.
+## 3. Tokenize
+This approach creates a tall, narrow dataframe of tokens.
 
 We get some cleaning for free from the `unnest()` function.
+- Remove punctuation;
+- Convert to lower case; and
+- Remove white space
 
-- Remove punctuation.
-- Convert to lower case.
-- Remove white space.
+We also outer-join a stop word list to remove them.
 
-And we outer join a stop word list to remove those.
-
-**Possible additional cleaning**
-
-- Stemming.
+**Notes on possibilities for additional cleaning**
+- Stemming: we can enable improved analysis by reducing words to their root form, or stem. This would have the additional benefit of reducing the size of the DTM.
 
 ```{r}
-# Look at 2 emails.
-# dplyr retrieval is easy. Filtering and aggregation, too.
+# Look at 2 emails for validation
+# dplyr retrieval is easy, as is filtering and aggregation
 email_df %>% 
 	select(email) %>% 
 	sample_n(2)
 
-# Tokenize all emails.
+# Tokenize all emails
 email_tokens_df <- email_df %>% 
 	unnest_tokens(word, email) %>% 
 	anti_join(stop_words)
 ```
 
-### Look at some counts.
+### Check counts for validation
 ```{r}
 email_tokens_df %>% 
 	count(word, sort = TRUE)
 ```
 
-Ham Word Cloud
+### Ham Word Cloud
 ```{r} 
 email_tokens_df %>%
   filter(class == "ham") %>% count(word) %>% wordcloud2
 ```
 
-Spam Word Cloud
-
+### Spam Word Cloud
 ```{r} 
 email_tokens_df %>%
   filter(class == "spam") %>% count(word) %>% wordcloud2 
-
 ```
 
-
-## TD-IDF
-Calculate term frequency and and inverse document frequency. We'll need this for producing a DTM.
+## 4. Term Frequency–Inverse Document Frequency
+We calculate term frequency and inverse document frequency (TD-IDF) to enable producing a DTM.
 
 ```{r}
 email_tf_idf <- email_tokens_df %>% 
@@ -192,18 +184,16 @@ email_tf_idf %>%
   coord_flip()
 ```
 
-## Document term matrix
-First departure from Tidy formats. Usable by ML models.
-
-Cast counts to a DTM. Inspect and reduce some of the sparseness.
+## 5. Document Term Matrix
+We make our first departure from Tidy formats to a format readily utilizable by ML models. We cast counts to a DTM, then inspect and reduce some of the sparseness.
 
 ```{r}
-# Word counts.
+# Word counts
 word_counts <- email_tokens_df %>%
   count(id, word, sort = TRUE) %>%
   ungroup()
 
-# Cast to a document term matrix.
+# Cast to a document term matrix
 email_dtm <- word_counts %>% 
 	cast_dtm(id, word, n)
 
@@ -212,24 +202,22 @@ dim(email_dtm)
 email_dtm
 inspect(email_dtm[101:105, 101:105])
 
-# inspect() does the work of printing the object and a matrix conversion.
-# Repeat the review to show the comparison.
+# inspect() does the work of printing the object and a matrix conversion
+# Repeat the review to show the comparison
 email_dtm
 email_m <- as.matrix(email_dtm)
 dim(email_m)
 email_m[101:105, 101:105]
 
-# Remove some sparse terms and review again using inspect().
+# Remove some sparse terms and review again using inspect()
 email_dtm_rm_sparse <- removeSparseTerms(email_dtm, 0.99)
 dim(email_dtm_rm_sparse)
 email_dtm_rm_sparse
 inspect(email_dtm_rm_sparse[101:105, 101:105])
-
 ```
 
-## Segment data
-Segment the data into sets for training and testing.
-
+## 6. Segment
+We segment the data into different sets for training and testing.
 ```{r}
 ham_cnt <- nrow(subset(email_df, class == "ham"))
 spam_cnt <- nrow(subset(email_df, class == "spam"))
@@ -239,7 +227,7 @@ train_indicator_ham <- rbinom(n = ham_cnt, size = 1, prob = .5)
 train_indicator_spam <- rbinom(n = spam_cnt, size = 1, prob = .5)
 
 # We discarded the split corpuses when we merged them. Split them again
-# to assign a training indicator.
+# to assign a training indicator
 email_df_ham <- email_df %>% 
     filter(class == "ham") %>% 
     mutate(train_indicator = train_indicator_ham)
@@ -252,31 +240,31 @@ email_df <- rbind(email_df_ham, email_df_spam)
 
 table(email_df$class, email_df$train_indicator)
 
-# We need to add the class into the matrix.
+# We need to add the class into the matrix
 email_dtm_df <- as.data.frame(as.matrix(email_dtm_rm_sparse))
 
 # The matrix conversion puts the id column into row names. The tibble package
 # has a function for moving that into a column. There is a term for "id" in the
 # matrix, so we need a synonym. Since unnest() removed punctuation, we can use
-# punctuation in the variable name and be sure of no collision.
+# punctuation in the variable name and be sure of no collision
 
 email_dtm_df <- email_dtm_df %>% 
     rownames_to_column(var = "doc_id")
 
 # Join the dtm to the email data frame to pick up the class. Don't need
-# the document id or the raw email, though.
+# the document id or the raw email, though
 email_dtm_df <- inner_join(email_df, email_dtm_df, by = c("id" ="doc_id")) %>% 
     select(-c("id", "email.x"))
 
-# Build the train and test sets. Drop the indicators when done.
+# Build the train and test sets. Drop the indicators when done
 train_dtm <- subset(email_dtm_df, train_indicator == 1)
 train_dtm <- train_dtm %>% select(-"train_indicator")
 test_dtm <- subset(email_dtm_df, train_indicator == 0)
 test_dtm <- test_dtm %>% select(-"train_indicator")
 ```
 
-## Support Vector Machine
-This email prediction is a supervised learning task. We employ SVM for its classification functionality. We train the model with a subset of the DTM, and test the prediction of ham/spam classification using the remainder.
+## 7. Support Vector Machine
+We enable the predictive model through a supervised learning task. We employ SVM for its classification functionality. We train the model with a subset of the DTM and test the prediction of ham/spam classification using the remainder.
 
 ```{r}
 train_model <- train(class.x ~ ., data = train_dtm, method = 'svmLinear3')
@@ -284,7 +272,7 @@ predict_train = predict(train_model, newdata=train_dtm)
 predict_test = predict( train_model, newdata=test_dtm)
 ```
 
-## Results
+## 8. Results
 We observe confusion matrices. First, we examine the confusion matrix for the training set just for its interest. It naturally gets a perfect score.
 
 The confusion matrix for the test set is very accurate with a low p value. One run on the test set was 97% accurate with a p value near zero. The positive class is ham. There were 2 false negatives identified as spam within 247 ham emails. There were 11 false positives identifies as ham within 248 spam emails.
@@ -300,20 +288,13 @@ svm_confusion_m
 # Appendix: Alternate Approaches
 
 ## Appendix libraries
- 
 ```{r}
 library('quanteda')
-library('tidytext') 
-library('dplyr') 
 library('tidyverse')
-library('tidyr')  
-library('tm')  
-library('stringr')
-
 ```
   
-## Introducing tm and VCorpus
-There are only a few major packages focused on textmining in R. Among them (tm, tidytext, corpus, and koRpus). While we found tidytext to be most user-friendly and comprehensive, we also learned the in's and out's of the tm package and VCorpus, despite our file format not exactly lining up with any of the tm examples online. See below for what we found to be the most flexible grammars in working with tm. 
+## tm & VCorpus
+There are only a few major packages focused on textmining in R, including: `tm`, `tidytext`, `corpus`, and `koRpus`. While we found tidytext to be most user-friendly and comprehensive, we also learned the ins and outs of the `tm` package and `VCorpus`, despite our file format not exactly lining up with any of the tm examples online. See below for what we found to be the most flexible grammars in working with tm. 
 ```{r}
 # Create a corpus from many files
 ham_rawc <- VCorpus(DirSource("data/easy_ham/"))  #  Use DirSource, VCorpus is sensitive to file endings
@@ -329,8 +310,7 @@ meta(spam_corpus, tag="class", type ="corpus") <- "spam"
 
 rm(list = c("ham_rawc", "spam_rawc")) # remove objects
 gc() # garbage collection
- 
- 
+
 # Speed up processing by collapsing the lines in the
 # line-by-line storage format of the VCorpus import
 # Always use content_transformer to transform VCorpus 
@@ -349,15 +329,13 @@ spam_corpus <- tm_map(spam_corpus, collapse_lines)
 #ham_corpus[[1]]$content[1]
 ```
 
-
-## Export to quanteda
+## Export to Quanteda
 Exporting metadata from VCorpus to quanteda is a special process, so note that exporting at this point is an option. 
 ```{r}
 q_corp_ham <- tm::VCorpus(tm::VectorSource(ham_corpus))
 q_corp_ham <- corpus(q_corp_ham)
 q_corp_spam <- tm::VCorpus(tm::VectorSource(spam_corpus))
 q_corp_spam <- corpus(q_corp_spam)
-
 
 # Try out various sample code online 
 # Disable until tf-idf weighting can be reintegrated with training
@@ -377,7 +355,6 @@ q_corp_spam <- corpus(q_corp_spam)
 # tf-idf weighting           
 #df_dfm <- dfm_tfidf(df_dfm, scheme_tf = "count", scheme_df = "inverse", force = TRUE)
  
- 
 #size <- dim(df)
 #train_end <- round(train_prop*size[1])
 #test_start <- train_end + 1
@@ -389,7 +366,6 @@ q_corp_spam <- corpus(q_corp_spam)
 #df_dfm_train <- df_dfm[1:train_end,]
 #df_dfm_test <- df_dfm[test_start:test_end,]
 #glimpse(df_dfm_train)
-
 ```
 
 
@@ -397,10 +373,10 @@ q_corp_spam <- corpus(q_corp_spam)
 # Remove Quanteda  until we need them
 rm(list = c("q_corp_ham", "q_corp_spam")) # remove objects
 gc() # garbage collection
- 
 ```
 
-## Set VCorpus docvars, prior to cleaning the headers
+## Set VCorpus docvars
+Set docvars prior to cleaning the headers
 ```{r}
 # Setting the Metadata at the document level looks a little
 # different than setting the metadata at the corpora level
@@ -428,10 +404,7 @@ ham_corpus <- set_doc_vars(ham_corpus)
 spam_corpus <- set_doc_vars(spam_corpus)
 ```
 
-
-
-## Clean text in VCorpus
-
+## Cleaning with VCorpus
 
 ### Remove email header
 ```{r}
@@ -442,7 +415,7 @@ c_ham <- tm_map(ham_corpus, content_transformer(function(x)  sub(".*?\n\n", "", 
 c_spam <- tm_map(spam_corpus, content_transformer(function(x)  sub(".*?\n\n", "", x)))
 ```
 
-### Try out an external function. 
+### Try an external function 
 Great text processing ideas come from many places since text processing challenges tend to be ubiquitous. 
 We got this function directly from https://www.datacamp.com/community/tutorials/R-nlp-machine-learning
 ```{r}
@@ -459,13 +432,10 @@ fix_contractions <- function(doc) {
   # 's could be 'is' or could be possessive: it has no expansion  doc <- gsub("'s", "", doc)
   return(doc)
 }
-
 ```
 
-### Clean text with gsub, content_transformer, and tm_map
-We separate all of the cleaning functions into one line-rules as much as possible, 
-so to turn these on or off during testing, although in production they would likely 
-be grouped. 
+### Clean text with `gsub`, `content_transformer`, and `tm_map`
+We separate all of the cleaning functions into one line-rules as much as possible so to turn these on or off during testing. In production, however, they would likely be grouped. 
 
 #### Cleaning which will likely not influence our classification
 ```{r}
@@ -486,7 +456,7 @@ c_spam <- tm_map(c_spam, content_transformer(function(x) gsub("https?://[^ ]+", 
 ##c_spam <- tm_map(c_spam, content_transformer(function(x) gsub("\\\\", "", x)))
 ```
 
-#### More significant cleaning
+#### More substantive cleaning
 ```{r}
 # Create a temporary function for removing html tags, which tidytext will sometimes remove, but 
 # paste will not. 
@@ -505,8 +475,6 @@ c_ham <- tm_map(c_ham, function(x) removePunctuation(x,
 # Normalize whitespace
 #c_ham <- tm_map(c_ham, stripWhitespace, lazy = TRUE)
 
-
-
 c_spam <- tm_map(c_spam, content_transformer(function(x) gsub("<.[^>]+>", "", x)))
 c_spam <- tm_map(c_spam, content_transformer(function(x) gsub("[[:punct:]]+"," ", x)))
 c_spam <- tm_map(c_spam, function(x) removePunctuation(x,
@@ -516,10 +484,7 @@ c_spam <- tm_map(c_spam, function(x) removePunctuation(x,
 ```
 
 #### Advanced cleaning
-While removing numbers and stopwords will no doubt result in more robust classification
-over large corpora, doing so in this small dataset will likely yield a worse result. 
-It is debatable whether removing stopwords and stemming will also remove some of the grammatical
-signatures of spam, and this depends on our method of text processing.
+While removing numbers and stopwords will no doubt result in more robust classification over large corpora, doing so in this small dataset will likely yield a worse result.It is debatable whether removing stopwords and stemming will also remove some of the grammatical signatures of spam, and this depends on our method of text processing.
 ```{r}
 c_ham <- tm_map(c_ham, removeNumbers, lazy = TRUE)
 c_ham <- tm_map(c_ham, removeWords, stopwords("english"), lazy = TRUE)
