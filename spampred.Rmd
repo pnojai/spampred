@@ -16,7 +16,7 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# Test
+# Project 4
 ## Flag spam
 Analyze a corpus of emails classified as spam or legitimate (dubbed "ham"). Develop a predictive process for classifying new email correctly.
 
@@ -111,8 +111,7 @@ Remove headers. By specification, email headers may not contain blank lines. The
 # Remove headers.
 # Tibbles. They're great. No strings as factors, no row names.
 email_bodies <- tibble(email = sapply(email_df$email, function(x) {
-    #str_match(x, "(?s)(.*?\\n\\n)(.*)")[3]
-    sub(".*?((\r|\n)\n){2}", "", x)
+    str_match(x, "(?s)(.*?\\n\\n)(.*)")[3]
 }))
 
 # Replace email column with bodies.

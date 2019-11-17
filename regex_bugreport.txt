@@ -1,0 +1,24 @@
+EMAIL #2
+Top of email #2 (cutting down middle of header):
+
+"From Steve_Burt@cursor-system.com  Thu Aug 22 12:46:39 2002\nReturn-Path: <Steve_Burt@cursor-system.com>\nDelivered-To: zzzz@localhost.netnoteinc.com\nReceived: from localhost (localhost [127.0.0.1])\n\tby phobos.labs.netnoteinc.com (Postfix) with ESMTP id BE12E43C34\n\tfor <zzzz@localhost>; Thu, 22 Aug 2002 07:46:
+...
+y-To: zzzzteana@yahoogroups.com\nContent-Type: text/plain; charset=US-ASCII\nContent-Transfer-Encoding: 7bit\n\nMartin A posted:\nTassos Papadopoulos, the Greek sculptor behind the plan, judged that the\n limestone of Mount Kerdylio, 70 miles east of Salonika and not far from the\n Mount Athos 
+
+Email body extracted with sub(). It's empty, but there is a body.
+""
+
+Top of mail body extracted with str_match(). This body is correct.
+"Martin A posted:\nTassos Papadopoulos, the Greek sculptor behind the plan, judged that the\n limestone of Mount Kerdylio, 70 miles east of Salonika and not far
+
+EMAIL #4
+Top of email #4 (cutting down middle of header):
+"From irregulars-admin@tb.tf  Thu Aug 22 14:23:39 2002\nReturn-Path: <irregulars-admin@tb.tf>\nDelivered-To: zzzz@localhost.netnoteinc.com\nReceived: from localhost (localhost [127.0.0.1])\n\tby phobos.labs.netnoteinc.com (Postfix) with ESMTP id 9DAE147C66\n\tfor <zzzz@localhost>; Thu, 22 Aug 2002 09:23:38 -0400 (EDT)\
+...
+List-Archive: <http://tb.tf/mailman/private/irregulars/>\nDate: Thu, 22 Aug 2002 09:15:25 -0400\n\nKlez: The Virus That Won't Die\n \nAlready the most prolific virus ever, Klez continues to wreak havoc.\n\nAndrew Brandt\n>>From the September 2002 issue of PC World magazine\nPosted Thursday, August 01, 2002\n\n\nThe Klez worm is approaching its seventh month of wriggling across \nthe Web, making it 
+
+Email body extracted with sub(). It didn't remove the header.
+"From irregulars-admin@tb.tf  Thu Aug 22 14:23:39 2002\nReturn-Path: <irregulars-admin@tb.tf>\nDelivered-To: zzzz@localhost.netnoteinc.com\nReceived: from localhost (localhost [127.0.0.1])\n\tby phobos.labs.netnoteinc.com (Postfix) with ESMTP id 9DAE147C66\n\tfor <zzzz@localhost>; Thu, 22 Aug 2002 09:23:38 -0400 (EDT)\nReceived: from phobos [127.0.0.1]\n\tby localhost with IMAP (fetchmail-5.9.0)\n\tfor zzzz@localhost (single-drop); Thu, 22 Aug 2002 14:23:38 +0100 (IST)\nReceived:
+
+Email body extracted with str_match(). This is correct.
+"Klez: The Virus That Won't Die\n \nAlready the most prolific virus ever, Klez continues to wreak havoc.\n\nAndrew Brandt\n>>From the September 2002 issue of PC World magazine\nPosted Thursday, August 01, 2002\n\n\nThe Klez worm is approaching its seventh month of wriggling across \nthe Web, making it one of the most persistent viruses ever. And \nexperts warn that it may be a
