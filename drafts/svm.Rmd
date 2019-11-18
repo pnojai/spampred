@@ -1,0 +1,93 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# https://bradleyboehmke.github.io/HOML/svm.html
+# Helper packages
+library(dplyr)    # for data wrangling
+library(ggplot2)  # for awesome graphics
+library(rsample)  # for data splitting
+
+# Modeling packages
+library(caret)    # for classification and regression training
+library(kernlab)  # for fitting SVMs
+
+# Model interpretability packages
+library(pdp)      # for partial dependence plots, etc.
+library(vip)      # for variable importance plots
+ 
+# Create training (70%) and test (30%) sets
+set.seed(123)  # for reproducibility
+spam_split <- initial_split(email_df, prop = 0.7, strata = "class")
+spam_train <- training(spam_split)
+spam_test  <- testing(spam_split)
+
+
+model <- train(
+  class ~ ., 
+  spam_train,
+  method = "svmRadial",               
+  preProcess = c("center", "scale"),  
+  trControl = trainControl(method = "cv", number = 10),
+  tuneLength = 10
+)
+
+ctrl <- trainControl(
+  method = "cv", 
+  number = 10, 
+  classProbs = TRUE,                 
+  summaryFunction = twoClassSummary  # also needed for AUC/ROC
+)
+
+```
+
+```{r}
+
+# Tune an SVM
+set.seed(5628)  # for reproducibility
+spam_svm_auc <- train(
+  class ~ ., 
+  data = spam_train,
+  method = "svmRadial",               
+  preProcess = c("center", "scale"),  
+  metric = "ROC",  # area under ROC curve (AUC)       
+  trControl = ctrl,
+  tuneLength = 10
+)
+
+```
+
+```{r}
+
+confusionMatrix(spam_svm_auc)
+```
+
+```{r}
+prob_spam <- function(object, newdata) {
+  predict(object, newdata = newdata, type = "prob")[, "spam"]
+}
+
+
+# Variable importance plot
+set.seed(2827)  # for reproducibility
+vip(spam_svm_auc, method = "permute", nsim = 5, train = spam_train, 
+    target = "class", metric = "auc", reference_class = "Yes", 
+    pred_wrapper = prob_spam)
+```
+
+```{r}
+HALT
+features <- c("OverTime", "WorkLifeBalance", 
+              "JobSatisfaction", "JobRole")
+pdps <- lapply(features, function(x) {
+  partial(churn_svm_auc, pred.var = x, which.class = 2,  
+          prob = TRUE, plot = TRUE, plot.engine = "ggplot2") +
+    coord_flip()
+})
+grid.arrange(grobs = pdps,  ncol = 2)
+
+
+```
+

@@ -1,0 +1,249 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+ 
+library(readr)
+library(stringr)
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(tidytext)
+library(ggplot2)
+library(tm)
+library(caret)
+```
+
+
+
+```{r}
+# Directories for emails.
+dir_spam <- "data/spam"
+dir_ham <- "data/easy_ham"
+
+# File lists.
+fils_ham <- list.files(dir_ham, full.names = TRUE)
+fils_spam <- list.files(dir_spam, full.names = TRUE)
+
+# Filter files for development.
+max_fils <- 500
+fils_ham <- fils_ham[1:(min(max_fils, length(fils_ham)))]
+fils_spam <- fils_spam[1:(min(max_fils, length(fils_spam)))]
+
+# Function for input.
+get_text_df <- function(files, class) {
+	raw_email <- sapply(files, read_file)
+	# Pick off key value on end of file names
+	id <- str_extract(files, "\\w*$")
+	# Corpus in tidy format. Each row is a document.
+	text_df <- tibble(id = id, class = as.factor(class), email = raw_email)
+
+	return(text_df)
+}
+
+# Input.
+ham_df <- get_text_df(fils_ham, "ham")
+spam_df <- get_text_df(fils_spam, "spam")
+
+# Merge the documents into one corpus.
+email_df <- rbind(ham_df, spam_df)
+
+# Free some memory.
+rm(list = c("ham_df", "spam_df"))
+gc()
+```
+
+
+```{r}
+# Remove headers.
+# Tibbles. They're great. No strings as factors, no row names.
+email_bodies <- tibble(
+    email=sapply(email_df$email, function(x) {sub(".*?((\r|\n)\n){2}", "", x)})
+)
+
+
+head(email_df)
+# Replace email column with bodies.
+df <- data.frame(id=email_df$id, class=email_df$class, email=email_bodies)#, raw_email=email_df$raw_email)
+#head(email_df)
+#email_df <- cbind(email_df[, 1:2], email_bodies)
+#cat(email_df[1,"email"][[1]])
+```
+## Tokenize
+This approach creates a tall, narrow data frame of tokens.
+
+We get some cleaning for free frum the `unnest()` function.
+
+- Remove punctuation.
+- Convert to lower case.
+- Remove white space.
+
+And we outer join a stop word list to remove those.
+
+**Possible additional cleansing**
+
+- Stemming.
+
+```{r}
+# Look at 2 emails.
+# dplyr retrieval is easy. Filtering and aggregation, too.
+email_df %>% 
+	select(email) %>% 
+	sample_n(2)
+ 
+# Tokenize all emails.
+email_tokens_df <- email_df %>% 
+	unnest_tokens(word, email) %>% 
+	anti_join(stop_words)
+```
+
+### Look at some counts.
+```{r}
+email_tokens_df %>% 
+	count(word, sort = TRUE)
+```
+
+## TD-IDF
+Calculate term frequency and and inverse document frequency. We'll need this for producing a DTM.
+
+```{r}
+email_tf_idf <- email_tokens_df %>% 
+  count(class, word, sort = TRUE) %>%
+  ungroup() %>%
+  bind_tf_idf(word, class, n)
+
+email_tf_idf %>% 
+  arrange(-tf_idf)
+
+email_tf_idf %>%
+  arrange(desc(tf_idf)) %>%
+  mutate(word = factor(word, levels = rev(unique(word)))) %>% 
+  group_by(class) %>% 
+  top_n(15) %>% 
+  ungroup() %>%
+  ggplot(aes(word, tf_idf, fill = class)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~class, ncol = 2, scales = "free") +
+  coord_flip()
+```
+
+## Document term matrix
+First departure from Tidy formats. Usable by ML models.
+
+Cast counts to a DTM. Inspect and reduce some of the sparseness.
+
+```{r}
+# Word counts.
+word_counts <- email_tokens_df %>%
+  count(id, word, sort = TRUE) %>%
+  ungroup()
+
+# Cast to a document term matrix.
+email_dtm <- word_counts %>% 
+	cast_dtm(id, word, n)
+
+# Print
+dim(email_dtm)
+email_dtm
+inspect(email_dtm[101:105, 101:105])
+
+# inspect() does the work of printing the object and a matrix conversion.
+email_dtm
+email_m <- as.matrix(email_dtm)
+dim(email_m)
+email_m[101:105, 101:105]
+
+# Remove some sparse terms and review again.
+email_dtm_rm_sparse <- removeSparseTerms(email_dtm, 0.99)
+dim(email_dtm_rm_sparse)
+email_dtm_rm_sparse
+inspect(email_dtm_rm_sparse[101:105, 101:105])
+
+```
+
+
+
+```{r}
+
+library(keras)
+library(tidyverse)
+library(tensorflow)
+#https://shirinsplayground.netlify.com/2019/01/text_classification_keras_data_prep/
+
+text <- email_df$email
+ 
+max_features <- 1000
+tokenizer <- text_tokenizer(num_words = max_features)
+
+tokenizer %>% 
+  fit_text_tokenizer(text)
+
+tokenizer$document_count
+```
+```{r}
+tokenizer$word_index %>%
+  head()
+ 
+text_seqs <- texts_to_sequences(tokenizer, text)
+
+text_seqs %>%
+  head()
+
+
+```
+
+
+```{r}
+# Set parameters:
+maxlen <- 100
+batch_size <- 32
+embedding_dims <- 50
+filters <- 64
+kernel_size <- 3
+hidden_dims <- 50
+epochs <- 5
+ 
+x_train <- text_seqs %>%
+  pad_sequences(maxlen = maxlen)
+dim(x_train)
+## [1] 23486   100
+
+
+y_train <- email_df$class
+length(y_train)
+```
+
+```{r}
+model <- keras_model_sequential() %>% 
+  layer_embedding(max_features, embedding_dims, input_length = maxlen) %>%
+  layer_dropout(0.2) %>%
+  layer_conv_1d(
+    filters, kernel_size, 
+    padding = "valid", activation = "relu", strides = 1
+  ) %>%
+  layer_global_max_pooling_1d() %>%
+  layer_dense(hidden_dims) %>%
+  layer_dropout(0.2) %>%
+  layer_activation("relu") %>%
+  layer_dense(1) %>%
+  layer_activation("sigmoid") %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = "adam",
+  metrics = "accuracy"
+)
+hist <- model %>%
+  fit(
+    x_train,
+    y_train,
+    batch_size = batch_size,
+    epochs = epochs,
+    validation_split = 0.3
+  )
+plot(hist)
+```

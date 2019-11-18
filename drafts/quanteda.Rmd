@@ -1,0 +1,180 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+ 
+library(readr)
+library(stringr)
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(tidytext)
+library(ggplot2)
+library(tm)
+library(caret)
+```
+
+
+
+```{r}
+# Directories for emails.
+dir_spam <- "data/spam"
+dir_ham <- "data/easy_ham"
+
+# File lists.
+fils_ham <- list.files(dir_ham, full.names = TRUE)
+fils_spam <- list.files(dir_spam, full.names = TRUE)
+
+# Filter files for development.
+max_fils <- 500
+fils_ham <- fils_ham[1:(min(max_fils, length(fils_ham)))]
+fils_spam <- fils_spam[1:(min(max_fils, length(fils_spam)))]
+
+# Function for input.
+get_text_df <- function(files, class) {
+	raw_email <- sapply(files, read_file)
+	# Pick off key value on end of file names
+	id <- str_extract(files, "\\w*$")
+	# Corpus in tidy format. Each row is a document.
+	text_df <- tibble(id = id, class = as.factor(class), email = raw_email)
+
+	return(text_df)
+}
+
+# Input.
+ham_df <- get_text_df(fils_ham, "ham")
+spam_df <- get_text_df(fils_spam, "spam")
+
+# Merge the documents into one corpus.
+email_df <- rbind(ham_df, spam_df)
+
+# Free some memory.
+rm(list = c("ham_df", "spam_df"))
+gc()
+```
+
+
+```{r}
+# Remove headers.
+# Tibbles. They're great. No strings as factors, no row names.
+email_bodies <- tibble(
+    email=sapply(email_df$email, function(x) {sub(".*?((\r|\n)\n){2}", "", x)})
+)
+
+
+head(email_df)
+# Replace email column with bodies.
+df <- data.frame(id=email_df$id, class=email_df$class, email=email_bodies)#, raw_email=email_df$raw_email)
+#head(email_df)
+#email_df <- cbind(email_df[, 1:2], email_bodies)
+#cat(email_df[1,"email"][[1]])
+```
+
+```{r}
+library(quanteda)     # text classification package
+library(tidyverse)    # data manipulation
+
+# set parameters
+set.seed(1912)
+train_prop <- 0.7 # % of data to use for training
+
+
+# prepare data
+names(df) <- c("Id", "Label", "Text")                         # add column labels
+df <- df[sample(nrow(df)),]                             # randomize data
+df <- df %>% filter(Text != '') %>% filter(Label != '') # filter blank data
+```
+
+
+```{r}
+# create document corpus  
+df_corpus <- corpus(df$Text)   # convert Text to corpus 
+docvars(df_corpus, field="Label") <- factor(df$Label, ordered=TRUE) # add classification label as docvar
+```
+
+```{r}
+head(df_corpus)
+docvars(df_corpus)
+```
+
+```{r}
+# build document term matrix from corpus
+df_dfm <- dfm(df_corpus, tolower = TRUE)
+# stem words
+df_dfm <- dfm_wordstem(df_dfm)
+# remove low frequency occurence words                                
+df_dfm <- dfm_trim(df_dfm, min_termfreq = 5, min_docfreq = 3)
+# tf-idf weighting           
+#df_dfm <- dfm_tfidf(df_dfm, scheme_tf = "count", scheme_df = "inverse", force = TRUE)
+ 
+
+# split data train/test
+size <- dim(df)
+train_end <- round(train_prop*size[1])
+test_start <- train_end + 1
+test_end <- size[1]
+
+df_train <- df[1:train_end,]
+df_test <- df[test_start:test_end,]
+
+df_dfm_train <- df_dfm[1:train_end,]
+df_dfm_test <- df_dfm[test_start:test_end,]
+glimpse(df_dfm_train)
+```
+
+
+
+ 
+```{r}
+# build model with training set
+df_classifier <- textmodel_nb(df_dfm_train, df_train$Label)
+
+# test model with testing set
+df_predictions <- predict(df_classifier, newdata = df_dfm_test)
+```
+
+
+```{r}
+conf_matrix <- table(df_predictions, df_test$Label)
+accuracy <- (conf_matrix[1,1] + conf_matrix[2,2]) / sum(conf_matrix)
+precision <- conf_matrix[2,2] / sum(conf_matrix[2,])
+recall <- conf_matrix[2,2] / sum(conf_matrix[,2])
+f1_score <- 2 * ((precision * recall) / (precision + recall))
+
+cat("Confidence Matrix:")
+conf_matrix
+cat("\nAccuracy: ", accuracy)
+cat("\nPrecision: ", precision)
+cat("\nRecall: ", recall)
+cat("\nF1 Score: ", f1_score)
+```
+
+
+
+```{r echo=FALSE}
+
+trainingset <- df_dfm_train
+trainingclass <- df_train$Label
+ 
+## replicate IIR p261 prediction for test set (document 5)
+(tmod1 <- textmodel_nb(trainingset, y = trainingclass, prior = "docfreq"))
+summary(tmod1)
+coef(tmod1)
+predict(tmod1)
+
+# contrast with other priors
+predict(textmodel_nb(trainingset, y = trainingclass, prior = "uniform"))
+predict(textmodel_nb(trainingset, y = trainingclass, prior = "termfreq"))
+
+## replicate IIR p264 Bernoulli Naive Bayes
+tmod2 <- textmodel_nb(trainingset, y = trainingclass, distribution = "Bernoulli", 
+                        prior = "docfreq")
+df_predictions <- predict(tmod2, newdata = df_dfm_test)
+head(df_predictions) 
+#https://rdrr.io/cran/quanteda/man/textmodel_nb.html
+```
